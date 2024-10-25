@@ -1,0 +1,5 @@
+# Ignore the .streamlit folder and its contents
+.streamlit/
+
+# Ignore the .env file
+.env
