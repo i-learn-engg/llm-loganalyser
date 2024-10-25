@@ -1,9 +1,10 @@
 import hashlib
 import os
 import openai
-from pinecone import Pinecone, ServerlessSpec
 import streamlit as st
-from langchain.embeddings import OpenAIEmbeddings
+import pinecone
+from pinecone import IndexSpec
+from langchain_community.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import Pinecone as PineconeStore
 from langchain.chains import RetrievalQA
 from langchain.llms import OpenAI
@@ -13,24 +14,20 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # Load environment variables
 load_dotenv()
 
+# Function to retrieve secrets, handling nested keys in st.secrets and fallback to environment variables
 def get_secret(key_path):
-    # Check if st.secrets has been loaded (for production)
     if st.secrets:
-        # Split the key path by "." for hierarchical access
         keys = key_path.split(".")
         secret = st.secrets
         try:
-            # Traverse the secrets hierarchy
             for key in keys:
                 secret = secret[key]
             return secret
         except KeyError:
-            pass  # Continue to environment variable if key not found in secrets
-
-    # Fallback to environment variable if not found in st.secrets
+            pass  # Fallback to environment if not found in secrets
     return os.getenv(key_path.replace(".", "_").upper())
 
-# Fetch API keys using get_secret function
+# Fetch API keys and environment settings
 openai_api_key = get_secret("OPENAI_API_KEY")
 pinecone_api_key = get_secret("pinecone.api_key")
 pinecone_env = get_secret("pinecone.environment")
@@ -38,24 +35,30 @@ pinecone_env = get_secret("pinecone.environment")
 # Initialize OpenAI API key
 openai.api_key = openai_api_key
 
-# Initialize Pinecone instance with the new API
-pc = Pinecone(api_key=pinecone_api_key)
+# Initialize Pinecone client with API key and environment
+if pinecone_api_key and pinecone_env:
+    pinecone_client = pinecone.Client(api_key=pinecone_api_key, environment=pinecone_env)
+else:
+    raise ValueError("Pinecone API key or environment not found.")
 
 # Define the index name
 index_name = "log-analysis-index"
 
 # Check if the Pinecone index already exists; if not, create it
-if index_name not in pc.list_indexes().names():
-    # Create a new index with the right dimension for OpenAI embeddings (1536) and serverless spec
-    pc.create_index(
+if index_name not in [index.name for index in pinecone_client.list_indexes()]:
+    # Create a new index with the specified dimension, metric, and configuration
+    pinecone_client.create_index(
         name=index_name, 
-        dimension=1536, 
+        dimension=1536,  # For OpenAI embeddings
         metric="cosine",
-        spec=ServerlessSpec(cloud="aws", region="us-east-1")
+        index_spec=IndexSpec(
+            cloud="aws",
+            region="us-east-1"
+        )
     )
 
 # Connect to the Pinecone index
-index = pc.Index(index_name)
+index = pinecone_client.Index(index_name)
 
 # Create embeddings using OpenAI
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
@@ -65,7 +68,6 @@ vectorstore = PineconeStore(index, embeddings.embed_query, "text")
 
 # Dictionary to store processed file hashes
 processed_files = {}
-
 
 # Function to compute hash of the uploaded file
 def compute_file_hash(file_path):
@@ -121,6 +123,7 @@ def chat_with_logs(question, qa_chain):
     except Exception as e:
         st.error(f"Error in retrieving answer: {str(e)}")
         return None
+
 # Function to validate the file extension
 def validate_file_extension(file_name):
     if not file_name.endswith('.log'):
@@ -130,7 +133,6 @@ def validate_file_extension(file_name):
 def main():
     st.title("Log Analysis Q&A Chat")
    
-
     # Initialize session state to store chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -138,9 +140,7 @@ def main():
     # Section to upload log file (specifically accepting .log files)
     uploaded_file = st.file_uploader("Upload .log file", type=["log"])
 
-    
     if uploaded_file is not None:
-
         # Validate the file extension
         validate_file_extension(uploaded_file.name)
         
@@ -148,7 +148,6 @@ def main():
         file_size_mb = uploaded_file.size / (1024 * 1024)
         st.write(f"Uploaded file size: {file_size_mb:.2f} MB")
 
-    
         with open("log.log", "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.success("File uploaded successfully!")
