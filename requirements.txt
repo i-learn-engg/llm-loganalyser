@@ -4,3 +4,4 @@ streamlit
 langchain
 python-dotenv
 langchain-community
+tiktoken
