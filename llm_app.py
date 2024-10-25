@@ -1,11 +1,10 @@
 import hashlib
 import os
 import openai
-import streamlit as st
-import pinecone
 from pinecone import Pinecone, ServerlessSpec
+import streamlit as st
 from langchain.embeddings import OpenAIEmbeddings
-from langchain.vectorstores import Pinecone as PineconeStore
+from langchain_community.vectorstores import Pinecone as PineconeStore
 from langchain.chains import RetrievalQA
 from langchain.llms import OpenAI
 from dotenv import load_dotenv
@@ -14,28 +13,18 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # Load environment variables
 load_dotenv()
 
-# Function to retrieve secrets, handling nested keys in st.secrets and fallback to environment variables
-def get_secret(key_path):
-    if st.secrets:
-        keys = key_path.split(".")
-        secret = st.secrets
-        try:
-            for key in keys:
-                secret = secret[key]
-            return secret
-        except KeyError:
-            pass  # Fallback to environment if not found in secrets
-    return os.getenv(key_path.replace(".", "_").upper())
+def get_secret(key):
+    # Try to get the secret from st.secrets (production) or fallback to os.getenv (local)
+    return st.secrets.get(key) if "OPENAI_API_KEY" in st.secrets else os.getenv(key)
 
-# Fetch API keys and environment settings
+# Fetch API keys using get_secret function
 openai_api_key = get_secret("OPENAI_API_KEY")
 pinecone_api_key = get_secret("PINECONE_API_KEY")
-pinecone_env = get_secret("PINECONE_ENVIRONMENT")
 
 # Initialize OpenAI API key
 openai.api_key = openai_api_key
 
-# Initialize Pinecone client with API key and environment
+# Initialize Pinecone instance with the new API
 pc = Pinecone(api_key=pinecone_api_key)
 
 # Define the index name
@@ -43,19 +32,16 @@ index_name = "log-analysis-index"
 
 # Check if the Pinecone index already exists; if not, create it
 if index_name not in pc.list_indexes().names():
-    # Create a new index with the specified dimension and metric
+    # Create a new index with the right dimension for OpenAI embeddings (1536) and serverless spec
     pc.create_index(
         name=index_name, 
-        dimension=1536,  # For OpenAI embeddings
+        dimension=1536, 
         metric="cosine",
-        spec=ServerlessSpec(
-            cloud='aws',
-            region='us-west-2'
-        )
+        spec=ServerlessSpec(cloud="aws", region="us-east-1")
     )
 
 # Connect to the Pinecone index
-index = pc.index(index_name)
+index = pc.Index(index_name)
 
 # Create embeddings using OpenAI
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
@@ -65,6 +51,7 @@ vectorstore = PineconeStore(index, embeddings.embed_query, "text")
 
 # Dictionary to store processed file hashes
 processed_files = {}
+
 
 # Function to compute hash of the uploaded file
 def compute_file_hash(file_path):
@@ -120,7 +107,6 @@ def chat_with_logs(question, qa_chain):
     except Exception as e:
         st.error(f"Error in retrieving answer: {str(e)}")
         return None
-
 # Function to validate the file extension
 def validate_file_extension(file_name):
     if not file_name.endswith('.log'):
@@ -130,6 +116,7 @@ def validate_file_extension(file_name):
 def main():
     st.title("Log Analysis Q&A Chat")
    
+
     # Initialize session state to store chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
@@ -137,7 +124,9 @@ def main():
     # Section to upload log file (specifically accepting .log files)
     uploaded_file = st.file_uploader("Upload .log file", type=["log"])
 
+    
     if uploaded_file is not None:
+
         # Validate the file extension
         validate_file_extension(uploaded_file.name)
         
@@ -145,6 +134,7 @@ def main():
         file_size_mb = uploaded_file.size / (1024 * 1024)
         st.write(f"Uploaded file size: {file_size_mb:.2f} MB")
 
+    
         with open("log.log", "wb") as f:
             f.write(uploaded_file.getbuffer())
         st.success("File uploaded successfully!")
