@@ -3,6 +3,7 @@ import os
 import openai
 import streamlit as st
 import pinecone
+from pinecone import Pinecone, ServerlessSpec
 from langchain.embeddings import OpenAIEmbeddings
 from langchain.vectorstores import Pinecone as PineconeStore
 from langchain.chains import RetrievalQA
@@ -35,22 +36,26 @@ pinecone_env = get_secret("PINECONE_ENVIRONMENT")
 openai.api_key = openai_api_key
 
 # Initialize Pinecone client with API key and environment
-pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
+pc = Pinecone(api_key=pinecone_api_key)
 
 # Define the index name
 index_name = "log-analysis-index"
 
 # Check if the Pinecone index already exists; if not, create it
-if index_name not in pinecone.list_indexes():
+if index_name not in pc.list_indexes().names():
     # Create a new index with the specified dimension and metric
-    pinecone.create_index(
+    pc.create_index(
         name=index_name, 
         dimension=1536,  # For OpenAI embeddings
-        metric="cosine"
+        metric="cosine",
+        spec=ServerlessSpec(
+            cloud='aws',
+            region='us-west-2'
+        )
     )
 
 # Connect to the Pinecone index
-index = pinecone.Index(index_name)
+index = pc.index(index_name)
 
 # Create embeddings using OpenAI
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
