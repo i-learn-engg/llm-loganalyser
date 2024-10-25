@@ -3,9 +3,8 @@ import os
 import openai
 import streamlit as st
 import pinecone
-from pinecone import IndexSpec
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain_community.vectorstores import Pinecone as PineconeStore
+from langchain.embeddings import OpenAIEmbeddings
+from langchain.vectorstores import Pinecone as PineconeStore
 from langchain.chains import RetrievalQA
 from langchain.llms import OpenAI
 from dotenv import load_dotenv
@@ -29,36 +28,29 @@ def get_secret(key_path):
 
 # Fetch API keys and environment settings
 openai_api_key = get_secret("OPENAI_API_KEY")
-pinecone_api_key = get_secret("pinecone.api_key")
-pinecone_env = get_secret("pinecone.environment")
+pinecone_api_key = get_secret("PINECONE_API_KEY")
+pinecone_env = get_secret("PINECONE_ENVIRONMENT")
 
 # Initialize OpenAI API key
 openai.api_key = openai_api_key
 
 # Initialize Pinecone client with API key and environment
-if pinecone_api_key and pinecone_env:
-    pinecone_client = pinecone.Client(api_key=pinecone_api_key, environment=pinecone_env)
-else:
-    raise ValueError("Pinecone API key or environment not found.")
+pinecone.init(api_key=pinecone_api_key, environment=pinecone_env)
 
 # Define the index name
 index_name = "log-analysis-index"
 
 # Check if the Pinecone index already exists; if not, create it
-if index_name not in [index.name for index in pinecone_client.list_indexes()]:
-    # Create a new index with the specified dimension, metric, and configuration
-    pinecone_client.create_index(
+if index_name not in pinecone.list_indexes():
+    # Create a new index with the specified dimension and metric
+    pinecone.create_index(
         name=index_name, 
         dimension=1536,  # For OpenAI embeddings
-        metric="cosine",
-        index_spec=IndexSpec(
-            cloud="aws",
-            region="us-east-1"
-        )
+        metric="cosine"
     )
 
 # Connect to the Pinecone index
-index = pinecone_client.Index(index_name)
+index = pinecone.Index(index_name)
 
 # Create embeddings using OpenAI
 embeddings = OpenAIEmbeddings(openai_api_key=openai_api_key)
