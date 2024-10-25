@@ -13,13 +13,27 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 # Load environment variables
 load_dotenv()
 
-def get_secret(key):
-    # Try to get the secret from st.secrets (production) or fallback to os.getenv (local)
-    return st.secrets.get(key) if "OPENAI_API_KEY" in st.secrets else os.getenv(key)
+def get_secret(key_path):
+    # Check if st.secrets has been loaded (for production)
+    if st.secrets:
+        # Split the key path by "." for hierarchical access
+        keys = key_path.split(".")
+        secret = st.secrets
+        try:
+            # Traverse the secrets hierarchy
+            for key in keys:
+                secret = secret[key]
+            return secret
+        except KeyError:
+            pass  # Continue to environment variable if key not found in secrets
+
+    # Fallback to environment variable if not found in st.secrets
+    return os.getenv(key_path.replace(".", "_").upper())
 
 # Fetch API keys using get_secret function
 openai_api_key = get_secret("OPENAI_API_KEY")
-pinecone_api_key = get_secret("PINECONE_API_KEY")
+pinecone_api_key = get_secret("pinecone.api_key")
+pinecone_env = get_secret("pinecone.environment")
 
 # Initialize OpenAI API key
 openai.api_key = openai_api_key
